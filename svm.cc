@@ -1,98 +1,137 @@
-#include <svm.h>
+#include <svm.hpp>
 #include <random>
+#include <iostream>
+
 
 namespace svm{
-SVM::SVM(size_t i_max_, Kernel& kernel_, double C_, double epsilon_)
-: kernel(kernel_), i_max(i_max), C(C_), epsilon(epsilon_){}
+Kernel LinearKernel = [](const arma::rowvec& a, const arma::rowvec& b){ return arma::dot(a.t(), b); };
 
-void SVM::fit(const nn::Tensor& X, const nn::Tensor& y){
-    auto n = X.shape[0];
-    auto d = X.shape[1];
-    auto alpha = nn::Tensor(1,n);
+SVM::SVM(const Kernel& kernel_, size_t i_max, double C_, double epsilon_)
+: kernel(kernel_), i_max(i_max), C(C_), epsilon(epsilon_){
+}
+SVM::SVM(std::string kernel_, size_t i_max, double C_, double epsilon_):
+    i_max(i_max), C(C_), epsilon(epsilon_){
+        if(kernel_ == "linear"){
+            kernel = LinearKernel;
+        }
+        else{
+            throw std::invalid_argument("Invalid kernel");
+        }
+    }
+
+
+void SVM::fit(const arma::mat& x, const arma::vec& y){
+    b = 0;
+    X = x;
+    Y = y;
+    m = X.n_rows;
+    alpha.set_size(m);
     alpha.zeros();
-    auto b = 0.0;
-    for(size_t i=0; i<max_iter; ++i){
-        auto alpha_prev = alpha;
-        auto diff = smo();
-        if(diff < epsilon){
-            break;
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_int_distribution<> r_dist(0,m-1);
+    size_t it = 0;
+    while(it < i_max){
+        size_t n_alphas = 0;
+        for(size_t i=0; i<m; ++i){
+            auto E_i = f(X.row(i)) - y(i);
+            if(ktt_broken(E_i, i)){
+                size_t j;
+                do{
+                    j = r_dist(mt);
+                }while(j==i);
+                auto E_j= f(X.row(j)) - y(j);
+                auto a_i_old = alpha(i);
+                auto a_j_old = alpha(j);
+                double L, H;
+                if(y(i) != y(j)){
+                    L = fmax(0, alpha(j) - alpha(i));
+                    H = fmin(C, C + alpha(j) - alpha(i));
+                }
+                else{
+                    L = fmax(0, alpha(i) + alpha(j) - C);
+                    H = fmin(C, alpha(i) + alpha(j));
+                }
+                if(L == H){
+                    continue;
+                }
+                auto k_ii = kernel(X.row(i), X.row(i));
+                auto k_ij = kernel(X.row(i), X.row(j));
+                auto k_jj = kernel(X.row(j), X.row(j));
+                auto eta = 2 * k_ij - k_ii - k_jj;
+                if(eta >= 0){
+                    continue;
+                }
+                alpha(j) -= y(j) * (E_i - E_j) / eta;
+                if(alpha(j) > H){
+                    alpha(j) = H;
+                }
+                else if(alpha(j) < L){
+                    alpha(j) = L;
+                }
+                if(std::abs(alpha(j) - a_j_old) < 10E-5){
+                    continue;
+                }
+                alpha(i) += y(i) * y(j) * (a_j_old - alpha(j));
+                auto b_1 = b - E_i - y(i) * (alpha(i) - a_i_old) * k_ii - y(i) * (alpha(j) - a_j_old) * k_ij;
+                auto b_2 = b - E_j - y(i) * (alpha(i) - a_i_old) * k_ij - y(j) * (alpha(j) -a_j_old) * k_jj;
+                if(0 < alpha(i) && alpha(i) < C){
+                    b = b_1;
+                }
+                else if (0 < alpha(j) && alpha(j) < C){
+                    b = b_2;
+                }
+                else{
+                    b = (b_1 + b_2) /2;
+                }
+                n_alphas++;
+            }
+        }
+        if(n_alphas == 0){
+            it++;
+        }
+        else{
+            it = 0;
         }
     }
 }
 
-nn::Tensor SVM::predict(const nn::Tensor& h){
-    return sign(nn::dot(w.t(), X.t() + b));
+arma::vec SVM::predict(const arma::mat& x){
+    size_t n = x.n_rows;
+    arma::vec p(n);
+    for(size_t i=0; i<n; ++i){
+        p(i) = sign(f(x.row(i)));
+    }
+    return p;
 }
 
-size_t SVM::smo(){
-    std::uniform_int_distribution<> dist(0,m);
+double SVM::score(const arma::mat& x, const arma::vec& y){
+    size_t n = x.n_rows;
+    size_t s = 0;
+    auto P = predict(x);
+    for(size_t i=0; i<n; ++i){
+        if(P(i) == y(i)){
+            s += 1;
+        }
+    }
+    return s / n;
+}
+
+bool SVM::ktt_broken(double E, size_t i){
+   return (Y(i) * E < - epsilon && alpha(i) < C) || (Y(i) * E > epsilon && alpha(i) > 0);
+}
+
+template<typename T>
+int SVM::sign(T x){
+    return (T(0) < x) - (x < T(0));
+}
+
+double SVM::f(const arma::rowvec& x){
+    double F = 0;
     for(size_t i=0; i<m; ++i){
-        auto fx_i = alpha_i * y_o * kernel(x_i, x) + b;
-        auto E_i = fx_i - y;
-        if((y_i * E_i < -epsilon && alpha_i < C) || (y_i * E_i > tol && a_i > 0)){
-            do{
-                auto j = dist(eng);
-            }while(j == i);
-            auto fx_j = alpha_j * y_j * kernel(x_j, x) + b;
-            auto E_j = fx_j - y;
-            auto alpha_i_old = alpha_i;
-            auto alpha_j_old = alpha_j;
-            if(y_i != y_j){
-                L = max(0,alpha_j - alpha_i);
-                H = min(C,C+alpha_j - alpha_i);
-            }
-            else{
-                L = max(0, alpha_i + alpha_j - C);
-                H = min(C, alpha_i + alpha_j)
-            }
-            if(L==H)
-                continue;
-            auto k_ij = kernel(x_i, x_j);
-            auto k_ii = kernel(x_i, x_i);
-            auto k_jj = kernel(x_j, x_j);
-            auto eta = 2 * k_ij - k_ii - k_jj;
-            if(eta >= 0)
-                continue;
-            alpha_j -= y_j * (E_i - E_j) / eta;
-            if(alpha_j > H){
-                alpha_j = H;
-            }
-            else if(alpha_j < L){
-                alpha_j = L;
-            }
-            if(abs(alpha_j - alpha_j_old) < 10E-5){
-                continue;
-            }
-            alpha_j += y_i * y_j *(alpha_j_old - alpha_j);
-            auto b_1 = b - E_i - y_i * (alpha_i - alpha_i_old) * k_ii - y_j * (alpha_j - alpha_j_old) * k_ij;
-            auto b_2 = b - E_j - y_i * (alpha_i - alpha_i_old) * k_ij - y_j * (alpha_j - alpha_j_old) * k_jj;
-            if(alpha_i > 0 && alpha_i < C){
-                b = b_1;
-            }
-            else if(alpha_j > 0 && alpha_j < C){
-                b = b_2;
-            }
-            else{
-                b = (b_1 + b_2)/2;
-            }
-            n_alpha_changed += 1;
-        }
+        F += alpha(i) * Y(i) * kernel(X.row(i), x);
     }
-    if(n_alpha_changed == 0){
-        passes++;
-    }
-    else{
-        passes = 0;
-    }
-}
-
-LinearKernel::LinearKernel() : Kernel(){};
-nn::Tensor LinearKernel::operator()(const nn::Tensor& a, const nn::Tensor& b){
-    return nn::dot(a,b.t());
-}
-
-PolyKernel::PolyKernel(size_t degree_) : Kernel(), degree(degree_){}
-nn::Tensor PolyKernel::operator()(const nn::Tensor& a, nn::Tensor& b){
-    return nn::pow(nn::dot(a, b.t()), degree);
+    F += b;
+    return F;
 }
 }

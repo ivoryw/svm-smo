@@ -1,32 +1,30 @@
 #ifndef SVM_H
 #define SVM_H
-#include "tensor.hpp"
+#include <armadillo>
+#include <string>
 
 namespace svm{
+
+typedef std::function<double(const arma::rowvec&, const arma::rowvec&)> Kernel;
+
 class SVM{
 public:
-    SVM(size_t, const Kernel&, double, double);
-    void fit(const nn::Tensor& X, const nn::Tensor& y);
-    nn::Tensor predict(const nn::Tensor& X);
+    SVM(const Kernel&, size_t=100, double=1, double=10E-5);
+    SVM(std::string, size_t=100, double=1, double=10E-5);
+    void fit(const arma::mat& X, const arma::vec& y);
+    arma::vec predict(const arma::mat& X);
+    double score(const arma::mat& X, const arma::vec& y);
 private:
+    double f(const arma::rowvec&);
+    bool ktt_broken(double, size_t);
+    template<typename T>int sign(T);
+    Kernel kernel;
     const size_t i_max;
-    const Kernel kernel;
-    const double C_, epsilon_;
-    nn::Tensor w, b;
-    void smo();
-}
+    const double C, epsilon;
+    size_t m;
+    double b;
+    arma::vec alpha, Y;
+    arma::mat X;
+};
 } // namespace svm
-
-class Kernel{
-    Kernel();
-    virtual nn::Tensor operator()(const nn:Tensor&, const nn::Tensor&);
-}
-
-class LinearKernel : public Kernel{
-    LinearKernel();
-}
-
-class PolyKernel : public Kernel{
-    PolyKernel(size_t);
-}
 #endif // SVM_H
