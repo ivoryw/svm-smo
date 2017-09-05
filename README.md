@@ -1,6 +1,7 @@
 # svm-smo
+
 ## Usage
-The svm module works with a simple fit(X, y) method and predicts using predict(X)
+The svm module offers fitting, prediction and scoring using provided methods.
 
 ### `svm::SVM`
 ##### `SVM.SVM(Kernel kernel, size_t max_it=100, double C=1, double epsilon=10E-5)`
@@ -25,3 +26,7 @@ Returns a arma::vec of predictions for the provided dataset.
 Returns the mean prediction rate of the fitted model for samples X against targets y
 * `X`: A feature set of shape (_n\_features_, _n\_samples_) to be predicted.
 * `y`: A binary classification vector of shape (_n\_samples_) to be compared to predictions on `X`
+
+## Requirements
+* Armadillo
+* C++14
