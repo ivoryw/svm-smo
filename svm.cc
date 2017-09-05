@@ -37,12 +37,14 @@ void SVM::fit(const arma::mat& x, const arma::vec& y){
             auto E_i = f(X.row(i)) - y(i);
             if(ktt_broken(E_i, i)){
                 size_t j;
+                // alpha selection (a more complex heuristic could be used, but for small datasets random selection with m(m-1) potential combinations is viable)
                 do{
                     j = r_dist(mt);
                 }while(j==i);
                 auto E_j= f(X.row(j)) - y(j);
                 auto a_i_old = alpha(i);
                 auto a_j_old = alpha(j);
+                // Finding the bounds for alpha
                 double L, H;
                 if(y(i) != y(j)){
                     L = fmax(0, alpha(j) - alpha(i));
@@ -58,11 +60,13 @@ void SVM::fit(const arma::mat& x, const arma::vec& y){
                 auto k_ii = kernel(X.row(i), X.row(i));
                 auto k_ij = kernel(X.row(i), X.row(j));
                 auto k_jj = kernel(X.row(j), X.row(j));
+                // Optimise alphas as to maximise objective funtion
                 auto eta = 2 * k_ij - k_ii - k_jj;
                 if(eta >= 0){
                     continue;
                 }
                 alpha(j) -= y(j) * (E_i - E_j) / eta;
+                // Clip to bounds
                 if(alpha(j) > H){
                     alpha(j) = H;
                 }
@@ -73,6 +77,7 @@ void SVM::fit(const arma::mat& x, const arma::vec& y){
                     continue;
                 }
                 alpha(i) += y(i) * y(j) * (a_j_old - alpha(j));
+                //Threshhold computation so KKT is satified for new alphas
                 auto b_1 = b - E_i - y(i) * (alpha(i) - a_i_old) * k_ii - y(i) * (alpha(j) - a_j_old) * k_ij;
                 auto b_2 = b - E_j - y(i) * (alpha(i) - a_i_old) * k_ij - y(j) * (alpha(j) -a_j_old) * k_jj;
                 if(0 < alpha(i) && alpha(i) < C){
