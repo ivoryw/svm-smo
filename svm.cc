@@ -7,18 +7,17 @@ namespace svm{
 Kernel LinearKernel = [](const arma::rowvec& a, const arma::rowvec& b){ return arma::dot(a.t(), b); };
 
 SVM::SVM(const Kernel& kernel_, size_t i_max, double C_, double epsilon_)
-: kernel(kernel_), i_max(i_max), C(C_), epsilon(epsilon_){
-}
-SVM::SVM(std::string kernel_, size_t i_max, double C_, double epsilon_):
-    i_max(i_max), C(C_), epsilon(epsilon_){
-        if(kernel_ == "linear"){
-            kernel = LinearKernel;
-        }
-        else{
-            throw std::invalid_argument("Invalid kernel");
-        }
-    }
+: kernel(kernel_), i_max(i_max), C(C_), epsilon(epsilon_){}
 
+SVM::SVM(std::string kernel_, size_t i_max, double C_, double epsilon_):
+i_max(i_max), C(C_), epsilon(epsilon_){
+    if(kernel_ == "linear"){
+        kernel = LinearKernel;
+    }
+    else{
+        throw std::invalid_argument("Invalid kernel");
+    }
+}
 
 void SVM::fit(const arma::mat& x, const arma::vec& y){
     b = 0;
@@ -37,7 +36,8 @@ void SVM::fit(const arma::mat& x, const arma::vec& y){
             auto E_i = f(X.row(i)) - y(i);
             if(ktt_broken(E_i, i)){
                 size_t j;
-                // alpha selection (a more complex heuristic could be used, but for small datasets random selection with m(m-1) potential combinations is viable)
+                // alpha selection (a more complex heuristic could be used,
+                // but for small datasets random selection with m(m-1) potential combinations is viable)
                 do{
                     j = r_dist(mt);
                 }while(j==i);
